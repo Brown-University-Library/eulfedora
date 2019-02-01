@@ -122,11 +122,13 @@ need to install development dependencies::
 
 Running the unit tests requires a Fedora Commons repository instance.  Before
 running tests, you will need to copy ``test/localsettings.py.dist`` to
-``test/localsettings.py`` and edit the configuration for your test repository.
+``test/localsettings.py`` and edit the configuration for your test repository -
+enable autoChecksum and Resource Index.
 
 To run the tests, you should set an environment variable of
 **DJANGO_SETTINGS_MODULE** equal to ``testsettings.test`` or prefix
-the nosetests command with ``env DJANGO_SETTINGS_MODULE=testsettings.test``.
+the nosetests command with ``env DJANGO_SETTINGS_MODULE=testsettings.test``. Also
+make sure that Django isn't more recent than 1.8.19.
 
 To run all unit tests::
 
