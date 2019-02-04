@@ -19,7 +19,6 @@ import csv
 import logging
 import requests
 import time
-import warnings
 
 from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor, \
     user_agent
@@ -338,12 +337,6 @@ class REST_API(HTTP_API_Base):
         # content via multipart file in request content, or dsLocation=URI
         # one of dsLocation or filename must be specified
 
-        # if checksum is sent without checksum type, Fedora seems to
-        # ignore it (does not error on invalid checksum with no checksum type)
-        if checksum is not None and checksumType is None:
-            warnings.warn('Fedora will ignore the checksum (%s) because no checksum type is specified' \
-                          % checksum)
-
         http_args = {}
         if dsLabel:
             http_args['dsLabel'] = dsLabel
@@ -367,6 +360,9 @@ class REST_API(HTTP_API_Base):
             http_args['checksumType'] = checksumType
         if checksum:
             http_args['checksum'] = checksum
+            #if we have a checksum, but no checksumType, just pick a default type so Fedora actually does the check
+            if not checksumType:
+                http_args['checksumType'] = 'MD5'
 
         # Added code to match how content is now handled, see modifyDatastream.
         extra_args = {}
