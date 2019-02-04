@@ -314,9 +314,9 @@ class TestDatastreams(FedoraTestCase):
         try:
             self.obj.save()
         except models.DigitalObjectSaveFailure as e:
-            #Error should go here
-            expected_error = e
-        self.assert_(str(expected_error).endswith('successfully backed out '), 'Incorrect checksum should back out successfully.')
+            expected_error = str(e)
+        self.assertRegex(expected_error, '.*failed to save IMAGE \(Checksum Mismatch: [a-f0-9]+\);.*')
+        self.assert_(expected_error.endswith('successfully backed out '), 'Incorrect checksum should back out successfully.')
 
         #Now try with correct checksum
         self.obj.image.content = open(new_file, mode='rb')
@@ -418,6 +418,15 @@ class TestNewObject(FedoraTestCase):
             re.search("<dsChecksum>[0-9a-f]+</dsChecksum>", dsinfo),
             'Fedora should automatically generated a datastream checksum on ingest ' +
             '(requires auto-checksum enabled and Fedora 3.7+)')
+
+    def test_invalid_checksum_new_object(self):
+        self.repo.default_pidspace = self.pidspace
+        obj = self.repo.get_object(type=MyDigitalObject)
+        obj.text.content = 'Hello'
+        obj.text.checksum = 'invalid'
+        with self.assertRaises(models.DigitalObjectSaveFailure) as cm:
+            obj.save()
+        self.assertRegex(str(cm.exception), '.*Checksum Mismatch: [a-f0-9]+')
 
     def test_ingest_content_uri(self):
         obj = self.repo.get_object(type=MyDigitalObject)
@@ -760,10 +769,10 @@ class TestDigitalObject(FedoraTestCase):
         try:
             self.obj.save()
         except models.DigitalObjectSaveFailure as err:
-            # Error should go here
-            expected_error = err
+            expected_error = str(err)
 
-        self.assert_('successfully backed out' in str(expected_error),
+        self.assertRegex(expected_error, '.*failed to save TEXT \(Checksum Mismatch: [a-f0-9]+\);.*')
+        self.assertTrue('successfully backed out' in expected_error,
             'Incorrect checksum should back out successfully.')
 
         # re-initialize the object. do it with a unicode pid to test a regression.
@@ -831,7 +840,6 @@ class TestDigitalObject(FedoraTestCase):
         self.obj.info_modified = True
         try:
             self.obj.save()
-
         except models.DigitalObjectSaveFailure as f:
             profile_save_error = f
         self.assert_(isinstance(profile_save_error, models.DigitalObjectSaveFailure))
