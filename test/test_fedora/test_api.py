@@ -620,6 +620,22 @@ So be you blythe and bonny, singing hey-nonny-nonny."""
               content=open(FILE.name))
         FILE.close()
 
+    def test_modifyDatastream_bad_sha_checksum(self):
+        added, ds_info = self._add_text_datastream()
+        with self.assertRaises(ChecksumMismatch):
+            self.rest_api.modifyDatastream(self.pid, 'TEXT', logMessage='test bad sha checksum update',
+                    content=io.BytesIO('Hello'.encode('utf8')), checksum='asdf', checksumType='SHA-512')
+
+    def test_modifyDatastream_valid_sha_checksum(self):
+        added, ds_info = self._add_text_datastream()
+        sha512_checksum = '3615f80c9d293ed7402687f94b22d58e529b8cc7916f8fac7fddf7fbd5af4cf777d3d795a7a00a16bf7e7f3fb9561ee9baae480da9fe7a18769e71886b03f315'
+        self.rest_api.modifyDatastream(self.pid, 'TEXT', logMessage='test bad sha checksum update',
+                    content=io.BytesIO('Hello'.encode('utf8')), checksum=sha512_checksum, checksumType='SHA-512')
+        r = self.rest_api.getDatastream(self.pid, 'TEXT')
+        dsinfo = r.text
+        self.assertRegex(dsinfo, '.*<dsChecksum>[0-9a-f]+</dsChecksum>.*')
+        self.assertTrue('<dsChecksumType>SHA-512</dsChecksumType>' in dsinfo)
+
     def test_modifyDatastream_bad_checksum_content_not_saved(self):
         added, ds_info = self._add_text_datastream()
         with self.assertRaises(ChecksumMismatch):
