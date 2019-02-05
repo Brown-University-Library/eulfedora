@@ -428,6 +428,37 @@ class TestNewObject(FedoraTestCase):
             obj.save()
         self.assertRegex(str(cm.exception), '.*Checksum Mismatch: [a-f0-9]+')
 
+    def test_invalid_sha_checksum_new_object(self):
+        self.repo.default_pidspace = self.pidspace
+        obj = self.repo.get_object(type=MyDigitalObject)
+        obj.text.content = 'Hello'
+        obj.text.checksum = 'invalid-checksum'
+        obj.text.checksum_type = 'SHA-512'
+        with self.assertRaises(models.DigitalObjectIngestFailure) as cm:
+            obj.save()
+        self.assertRegex(str(cm.exception), '.*Checksum Mismatch: [a-f0-9]+')
+
+    def test_valid_checksum_new_object(self):
+        self.repo.default_pidspace = self.pidspace
+        obj = self.repo.get_object(type=MyDigitalObject)
+        obj.text.content = 'Hello'
+        md5_checksum = '8b1a9953c4611296a827abf8c47804d7'
+        obj.text.checksum = md5_checksum
+        obj.save()
+        fetched = self.repo.get_object(obj.pid, type=MyDigitalObject)
+        self.assertEqual(fetched.text.checksum, md5_checksum)
+
+    def test_valid_sha_checksum_new_object(self):
+        self.repo.default_pidspace = self.pidspace
+        obj = self.repo.get_object(type=MyDigitalObject)
+        obj.text.content = 'Hello'
+        sha512_checksum = '3615f80c9d293ed7402687f94b22d58e529b8cc7916f8fac7fddf7fbd5af4cf777d3d795a7a00a16bf7e7f3fb9561ee9baae480da9fe7a18769e71886b03f315'
+        obj.text.checksum = sha512_checksum
+        obj.text.checksum_type = 'SHA-512'
+        obj.save()
+        fetched = self.repo.get_object(obj.pid, type=MyDigitalObject)
+        self.assertEqual(fetched.text.checksum, sha512_checksum)
+
     def test_ingest_content_uri(self):
         obj = self.repo.get_object(type=MyDigitalObject)
         obj.pid = 'test:1'
