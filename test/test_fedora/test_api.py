@@ -18,6 +18,7 @@
 from datetime import datetime, timedelta
 from dateutil.tz import tzutc
 import hashlib
+import io
 from lxml import etree
 from mock import patch
 from rdflib import URIRef
@@ -25,7 +26,6 @@ import re
 import requests
 from time import sleep
 import tempfile
-import warnings
 import six
 
 from test.test_fedora.base import FedoraTestCase, load_fixture_data
@@ -249,19 +249,17 @@ Hey, nonny-nonny."""
         # invalid checksum
         self.assertRaises(
             ChecksumMismatch, self.rest_api.addDatastream, self.pid,
-            "TEXT2", "text datastream", mimeType="text/plain",
+            "TEXT2", "text datastream", controlGroup='M', mimeType="text/plain",
             logMessage="creating TEXT2", content='<some> text content</some>',
             checksum='totally-bogus-not-even-an-MD5', checksumType='MD5')
+        self.assertTrue('TEXT2' not in self.rest_api.listDatastreams(self.pid).text)
 
-        # invalid checksum without a checksum type - warning, but no checksum mismatch
-        with warnings.catch_warnings(record=True) as w:
-            self.rest_api.addDatastream(
-                self.pid, "TEXT2", "text datastream", mimeType="text/plain",
-                logMessage="creating TEXT2", content='<some> text content</some>',
-                checksum='totally-bogus-not-even-an-MD5', checksumType=None)
-            self.assertEqual(1, len(w),
-                'calling addDatastream with checksum but no checksum type should generate a warning')
-            self.assert_('Fedora will ignore the checksum' in str(w[0].message))
+        # invalid checksum without a checksum type
+        self.assertRaises(
+            ChecksumMismatch, self.rest_api.addDatastream, self.pid,
+            "TEXT2", "text datastream", controlGroup='M', mimeType="text/plain",
+            logMessage="creating TEXT2", content='<some> text content</some>',
+            checksum='totally-bogus-not-even-an-MD5', checksumType=None)
 
         # attempt to add to a non-existent object
         FILE = tempfile.NamedTemporaryFile(mode="w", suffix=".txt")
@@ -275,6 +273,25 @@ Hey, nonny-nonny."""
               controlGroup='M', content=textfile)
 
         FILE.close()
+
+    #Note for these checksum tests: the checksum calculated by fedora seems to change depending on whether it's Managed or not.
+    def test_addDatastream_md5_checksum_valid(self):
+        md5_checksum = 'd3ee17e3eb1ea5e781bff9a4819e2dcc'
+        self.rest_api.addDatastream(self.pid, 'TEXT2', dsLabel='text datastream', controlGroup='M', mimeType='text/plain',
+                logMessage='creating TEXT2', content=io.BytesIO('<some> text content</some>'.encode('utf8')),
+                checksum=md5_checksum, checksumType='MD5')
+
+    def test_addDatastream_sha_checksum_invalid(self):
+        with self.assertRaises(ChecksumMismatch):
+            self.rest_api.addDatastream(self.pid, 'TEXT2', dsLabel='text datastream', controlGroup='M', mimeType="text/plain",
+                    logMessage='creating TEXT2', content='<some> text content</some>'.encode('utf8'),
+                    checksum='totally-bogus', checksumType='SHA-512')
+
+    def test_addDatastream_sha_checksum_valid(self):
+        sha512_checksum = '58e00a19ff6b665ea65f4e1f838baba78be8bce6045e11dd53305de40e21367ac4de4df99ea386a569329d988a1fb767396019b569fe34ab51333aaf40a1cb0c'
+        self.rest_api.addDatastream(self.pid, 'TEXT2', dsLabel='text datastream', controlGroup='M', mimeType="text/plain",
+                logMessage='creating TEXT2', content='<some> text content</some>'.encode('utf8'),
+                checksum=sha512_checksum, checksumType='SHA-512')
 
     def test_addDatastream_utf8(self):
         # unicode in datastream label
@@ -602,6 +619,32 @@ So be you blythe and bonny, singing hey-nonny-nonny."""
              "TEXT", "Text DS", mimeType="text/plain", logMessage="modifiying non-existent DS",
               content=open(FILE.name))
         FILE.close()
+
+    def test_modifyDatastream_bad_sha_checksum(self):
+        added, ds_info = self._add_text_datastream()
+        with self.assertRaises(ChecksumMismatch):
+            self.rest_api.modifyDatastream(self.pid, 'TEXT', logMessage='test bad sha checksum update',
+                    content=io.BytesIO('Hello'.encode('utf8')), checksum='asdf', checksumType='SHA-512')
+
+    def test_modifyDatastream_valid_sha_checksum(self):
+        added, ds_info = self._add_text_datastream()
+        sha512_checksum = '3615f80c9d293ed7402687f94b22d58e529b8cc7916f8fac7fddf7fbd5af4cf777d3d795a7a00a16bf7e7f3fb9561ee9baae480da9fe7a18769e71886b03f315'
+        self.rest_api.modifyDatastream(self.pid, 'TEXT', logMessage='test bad sha checksum update',
+                    content=io.BytesIO('Hello'.encode('utf8')), checksum=sha512_checksum, checksumType='SHA-512')
+        r = self.rest_api.getDatastream(self.pid, 'TEXT')
+        dsinfo = r.text
+        self.assertRegex(dsinfo, '.*<dsChecksum>[0-9a-f]+</dsChecksum>.*')
+        self.assertTrue('<dsChecksumType>SHA-512</dsChecksumType>' in dsinfo)
+
+    def test_modifyDatastream_bad_checksum_content_not_saved(self):
+        added, ds_info = self._add_text_datastream()
+        with self.assertRaises(ChecksumMismatch):
+            self.rest_api.modifyDatastream(self.pid, 'TEXT', logMessage='test bad checksum update',
+                    content=io.BytesIO('hello'.encode('utf8')), checksum='asdf')
+        history_response = self.rest_api.getDatastreamHistory(self.pid, 'TEXT', format='xml')
+        self.assertTrue('<dsVersionID>TEXT.1</dsVersionID>' not in history_response.text)
+        content_response = self.rest_api.getDatastreamDissemination(self.pid, 'TEXT')
+        self.assertEqual(content_response.text, self.TEXT_CONTENT)
 
     def test_modifyDatastream_utf8(self):
         # unicode in datastream label or log message should not cause errors

@@ -30,11 +30,12 @@ CLASSIFIERS = [
 ]
 
 requirements = [
-    'eulxml>=1.0.1',
+    'ply==3.8',
+    'eulxml>=1.1.3',
     'rdflib>=3.0',
     'python-dateutil',
-    'requests==2.20',
-    'requests-toolbelt>=0.6.0',
+    'requests>=2.21.0',
+    'requests-toolbelt>=0.9.1',
     'pycrypto',
     'pypdf2',
     'six',

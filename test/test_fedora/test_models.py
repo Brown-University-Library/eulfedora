@@ -21,6 +21,7 @@ except ImportError:
     # not available in python 2.6
     OrderedDict = None
 from datetime import datetime, timedelta
+import io
 import logging
 from lxml import etree
 from mock import patch, Mock
@@ -314,9 +315,9 @@ class TestDatastreams(FedoraTestCase):
         try:
             self.obj.save()
         except models.DigitalObjectSaveFailure as e:
-            #Error should go here
-            expected_error = e
-        self.assert_(str(expected_error).endswith('successfully backed out '), 'Incorrect checksum should back out successfully.')
+            expected_error = str(e)
+        self.assertRegex(expected_error, '.*failed to save IMAGE \(Checksum Mismatch: [a-f0-9]+\);.*')
+        self.assert_(expected_error.endswith('successfully backed out '), 'Incorrect checksum should back out successfully.')
 
         #Now try with correct checksum
         self.obj.image.content = open(new_file, mode='rb')
@@ -418,6 +419,46 @@ class TestNewObject(FedoraTestCase):
             re.search("<dsChecksum>[0-9a-f]+</dsChecksum>", dsinfo),
             'Fedora should automatically generated a datastream checksum on ingest ' +
             '(requires auto-checksum enabled and Fedora 3.7+)')
+
+    def test_invalid_checksum_new_object(self):
+        self.repo.default_pidspace = self.pidspace
+        obj = self.repo.get_object(type=MyDigitalObject)
+        obj.text.content = 'Hello'
+        obj.text.checksum = 'invalid'
+        with self.assertRaises(models.DigitalObjectSaveFailure) as cm:
+            obj.save()
+        self.assertRegex(str(cm.exception), '.*Checksum Mismatch: [a-f0-9]+')
+
+    def test_invalid_sha_checksum_new_object(self):
+        self.repo.default_pidspace = self.pidspace
+        obj = self.repo.get_object(type=MyDigitalObject)
+        obj.text.content = 'Hello'
+        obj.text.checksum = 'invalid-checksum'
+        obj.text.checksum_type = 'SHA-512'
+        with self.assertRaises(models.DigitalObjectIngestFailure) as cm:
+            obj.save()
+        self.assertRegex(str(cm.exception), '.*Checksum Mismatch: [a-f0-9]+')
+
+    def test_valid_checksum_new_object(self):
+        self.repo.default_pidspace = self.pidspace
+        obj = self.repo.get_object(type=MyDigitalObject)
+        obj.text.content = 'Hello'
+        md5_checksum = '8b1a9953c4611296a827abf8c47804d7'
+        obj.text.checksum = md5_checksum
+        obj.save()
+        fetched = self.repo.get_object(obj.pid, type=MyDigitalObject)
+        self.assertEqual(fetched.text.checksum, md5_checksum)
+
+    def test_valid_sha_checksum_new_object(self):
+        self.repo.default_pidspace = self.pidspace
+        obj = self.repo.get_object(type=MyDigitalObject)
+        obj.text.content = 'Hello'
+        sha512_checksum = '3615f80c9d293ed7402687f94b22d58e529b8cc7916f8fac7fddf7fbd5af4cf777d3d795a7a00a16bf7e7f3fb9561ee9baae480da9fe7a18769e71886b03f315'
+        obj.text.checksum = sha512_checksum
+        obj.text.checksum_type = 'SHA-512'
+        obj.save()
+        fetched = self.repo.get_object(obj.pid, type=MyDigitalObject)
+        self.assertEqual(fetched.text.checksum, sha512_checksum)
 
     def test_ingest_content_uri(self):
         obj = self.repo.get_object(type=MyDigitalObject)
@@ -760,10 +801,10 @@ class TestDigitalObject(FedoraTestCase):
         try:
             self.obj.save()
         except models.DigitalObjectSaveFailure as err:
-            # Error should go here
-            expected_error = err
+            expected_error = str(err)
 
-        self.assert_('successfully backed out' in str(expected_error),
+        self.assertRegex(expected_error, '.*failed to save TEXT \(Checksum Mismatch: [a-f0-9]+\);.*')
+        self.assertTrue('successfully backed out' in expected_error,
             'Incorrect checksum should back out successfully.')
 
         # re-initialize the object. do it with a unicode pid to test a regression.
@@ -831,7 +872,6 @@ class TestDigitalObject(FedoraTestCase):
         self.obj.info_modified = True
         try:
             self.obj.save()
-
         except models.DigitalObjectSaveFailure as f:
             profile_save_error = f
         self.assert_(isinstance(profile_save_error, models.DigitalObjectSaveFailure))
@@ -851,6 +891,20 @@ class TestDigitalObject(FedoraTestCase):
         self.assert_("<dc:description>This object has more data in it than a basic-object.</dc:description>" in r.text)
 
         # how to force an error that can't be backed out?
+
+    def test_save_invalid_sha_checksum(self):
+        self.obj.text.content = 'Hello'
+        self.obj.text.checksum = 'asdf'
+        self.obj.text.checksum_type = 'SHA-512'
+        with self.assertRaises(models.DigitalObjectSaveFailure) as cm:
+            self.obj.save()
+        self.assertRegex(str(cm.exception), '.*failed to save TEXT \(Checksum Mismatch: 3615f80c9d293ed7402687f94b22d58e529b8cc7916f8fac7fddf7fbd5af4cf777d3d795a7a00a16bf7e7f3fb9561ee9baae480da9fe7a18769e71886b03f315\);.*')
+
+    def test_save_valid_sha_checksum(self):
+        self.obj.text.content = 'Hello'
+        self.obj.text.checksum = '3615f80c9d293ed7402687f94b22d58e529b8cc7916f8fac7fddf7fbd5af4cf777d3d795a7a00a16bf7e7f3fb9561ee9baae480da9fe7a18769e71886b03f315'
+        self.obj.text.checksum_type = 'SHA-512'
+        self.obj.save()
 
     def test_save_utf8(self):
         # save object with unicode label

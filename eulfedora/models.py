@@ -28,7 +28,7 @@ import six
 from eulxml import xmlmap
 from eulfedora.api import ResourceIndex
 from eulfedora.rdfns import model as modelns, relsext as relsextns, fedora_rels
-from eulfedora.util import parse_xml_object, parse_rdf, RequestFailed, \
+from eulfedora.util import parse_xml_object, parse_rdf, RequestFailed, ChecksumMismatch, \
     datetime_to_fedoratime, force_bytes, force_text
 from eulfedora.xml import ObjectDatastreams, ObjectProfile, DatastreamProfile, \
     NewPids, ObjectHistory, ObjectMethods, DsCompositeModel, FoxmlDigitalObject, \
@@ -1542,9 +1542,10 @@ class DigitalObject(six.with_metaclass(DigitalObjectType, object)):
             # in later versions, it throws an exception
             try:
                 ds_saved = self.dscache[ds].save(logMessage)
-            except RequestFailed:
-                logger.error('Failed to save %s/%s', self.pid, ds)
+            except RequestFailed as rf:
+                logger.error('Failed to save %s/%s: %s' % (self.pid, ds, rf))
                 ds_saved = False
+                exc = rf
 
             if ds_saved:
                 saved.append(ds)
@@ -1552,7 +1553,10 @@ class DigitalObject(six.with_metaclass(DigitalObjectType, object)):
                 # save datastream failed - back out any changes that have been made
                 cleaned = self._undo_save(saved,
                                           "failed saving %s, rolling back changes" % ds)
-                raise DigitalObjectSaveFailure(self.pid, ds, to_save, saved, cleaned)
+                if 'Checksum Mismatch' in str(exc):
+                    raise DigitalObjectSaveFailure(self.pid, '%s (%s)' % (ds, str(exc)), to_save, saved, cleaned)
+                else:
+                    raise DigitalObjectSaveFailure(self.pid, ds, to_save, saved, cleaned)
 
         # NOTE: to_save list in exception will never include profile; should it?
 
@@ -1605,12 +1609,15 @@ class DigitalObject(six.with_metaclass(DigitalObjectType, object)):
         # but that causes problems for ingesting content with unicode
         # It *should* be ok to simply remove the decode, and trust users
         # to encode their strings correctly...
-        resp = self.api.ingest(foxml, logMessage)
+        try:
+            resp = self.api.ingest(foxml, logMessage)
+        except ChecksumMismatch as e:
+            raise DigitalObjectIngestFailure(str(e))
         if resp.status_code != requests.codes.created or resp.text != self.pid:
             msg = ('fedora returned unexpected pid "%s" when trying to ' +
                    'ingest object with pid "%s" (status code: %s)') % \
                    (resp.content, self.pid, resp.status_code)
-            raise Exception(msg)
+            raise DigitalObjectIngestFailure(msg)
 
         # then clean up the local object so that self knows it's dealing
         # with an ingested object now
@@ -2222,3 +2229,13 @@ class DigitalObjectSaveFailure(Exception):
     def __str__(self):
         return "Error saving %s - failed to save %s; saved %s; successfully backed out %s" \
                 % (self.obj_pid, self.failure, ', '.join(self.saved), ', '.join(self.cleaned))
+
+
+class DigitalObjectIngestFailure(DigitalObjectSaveFailure):
+
+    def __init__(self, msg):
+        self.msg = msg
+
+    def __str__(self):
+        return 'Error ingesting new object: %s' % self.msg
+
