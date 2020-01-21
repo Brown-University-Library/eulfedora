@@ -20,12 +20,9 @@ CLASSIFIERS = [
     'Natural Language :: English',
     'Operating System :: OS Independent',
     'Programming Language :: Python',
-    'Programming Language :: Python :: 2',
-    'Programming Language :: Python :: 2.7',
     'Programming Language :: Python :: 3',
-    'Programming Language :: Python :: 3.3',
-    'Programming Language :: Python :: 3.4',
     'Programming Language :: Python :: 3.5',
+    'Programming Language :: Python :: 3.6',
     'Topic :: Software Development :: Libraries :: Python Modules',
 ]
 
@@ -41,9 +38,6 @@ requirements = [
     'six',
 ]
 
-if sys.version_info < (2, 7):
-    requirements.append('argparse')
-
 test_requirements = [
     'sphinx',
     'nose',
@@ -58,11 +52,6 @@ dev_requirements = test_requirements + ['Django']
 
 if sys.version_info < (3, 0):
     requirements.append('progressbar2')
-
-# unittest2 should only be included for py2.6
-if sys.version_info < (2, 7):
-    dev_requirements.append('unittest2')
-
 
 setup(
     name='eulfedora',

@@ -246,33 +246,29 @@ Hey, nonny-nonny."""
         r = self.rest_api.getDatastreamDissemination(self.pid, ds['id'])
         self.assertEqual(self.TEXT_CONTENT, r.text)
 
-        # invalid checksum
-        self.assertRaises(
-            ChecksumMismatch, self.rest_api.addDatastream, self.pid,
-            "TEXT2", "text datastream", controlGroup='M', mimeType="text/plain",
-            logMessage="creating TEXT2", content='<some> text content</some>',
-            checksum='totally-bogus-not-even-an-MD5', checksumType='MD5')
+    def test_addDatastream_invalid_md5(self):
+        with self.assertRaises(ChecksumMismatch):
+            self.rest_api.addDatastream(self.pid, "TEXT2", "text datastream", controlGroup='M',
+                    mimeType="text/plain", logMessage="creating TEXT2", content='<some> text content</some>',
+                    checksum='totally-bogus-not-even-an-MD5', checksumType='MD5')
         self.assertTrue('TEXT2' not in self.rest_api.listDatastreams(self.pid).text)
 
-        # invalid checksum without a checksum type
+    def test_addDatastream_invalid_checksum_no_checksum_type(self):
         self.assertRaises(
             ChecksumMismatch, self.rest_api.addDatastream, self.pid,
             "TEXT2", "text datastream", controlGroup='M', mimeType="text/plain",
             logMessage="creating TEXT2", content='<some> text content</some>',
             checksum='totally-bogus-not-even-an-MD5', checksumType=None)
 
-        # attempt to add to a non-existent object
-        FILE = tempfile.NamedTemporaryFile(mode="w", suffix=".txt")
-        FILE.write("bogus")
-        FILE.flush()
-
-        with open(FILE.name) as textfile:
-            self.assertRaises(RequestFailed, self.rest_api.addDatastream, 'bogus:pid',
-              'TEXT', 'text datastream',
-              mimeType='text/plain', logMessage='creating new datastream',
-              controlGroup='M', content=textfile)
-
-        FILE.close()
+    def test_addDatastream_non_existent_object(self):
+        with tempfile.NamedTemporaryFile(mode="w+t", suffix=".txt") as textfile:
+            textfile.write("bogus")
+            textfile.flush()
+            textfile.seek(0)
+            with self.assertRaises(RequestFailed):
+                self.rest_api.addDatastream('bogus:pid', 'TEXT', 'text datastream',
+                            mimeType='text/plain', logMessage='creating new datastream',
+                            controlGroup='M', content=textfile)
 
     #Note for these checksum tests: the checksum calculated by fedora seems to change depending on whether it's Managed or not.
     def test_addDatastream_md5_checksum_valid(self):
