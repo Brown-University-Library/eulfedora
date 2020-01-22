@@ -33,7 +33,7 @@ except ImportError:
 
 from eulfedora import __version__ as eulfedora_version
 from eulfedora.util import datetime_to_fedoratime, \
-    RequestFailed, ChecksumMismatch, PermissionDenied, parse_rdf, \
+    RequestFailed, ChecksumMismatch, PermissionDenied, DatastreamDeleted, parse_rdf, \
     ReadableIterator, force_bytes
 
 logger = logging.getLogger(__name__)
@@ -122,6 +122,8 @@ class HTTP_API_Base(object):
                 # ChecksumMismatch or a more generic error
                 if 'Checksum Mismatch' in response.text:
                     raise ChecksumMismatch(response)
+                elif 'Changing attributes on deleted datastreams is forbidden.' in response.text:
+                    raise DatastreamDeleted(response)
                 else:
                     raise RequestFailed(response)
             else:

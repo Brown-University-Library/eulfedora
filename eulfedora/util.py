@@ -118,6 +118,10 @@ class ChecksumMismatch(RequestFailed):
         return self.detail
 
 
+class DatastreamDeleted(RequestFailed):
+    pass
+
+
 def parse_rdf(data, url, format=None):
     fobj = BytesIO(data)
     rdfid = URIRef(url)

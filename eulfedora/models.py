@@ -29,7 +29,7 @@ from eulxml import xmlmap
 from eulfedora.api import ResourceIndex
 from eulfedora.rdfns import model as modelns, relsext as relsextns, fedora_rels
 from eulfedora.util import parse_xml_object, parse_rdf, RequestFailed, ChecksumMismatch, \
-    datetime_to_fedoratime, force_bytes, force_text
+    DatastreamDeleted, datetime_to_fedoratime, force_bytes, force_text
 from eulfedora.xml import ObjectDatastreams, ObjectProfile, DatastreamProfile, \
     NewPids, ObjectHistory, ObjectMethods, DsCompositeModel, FoxmlDigitalObject, \
     DatastreamHistory
@@ -84,6 +84,7 @@ class DatastreamObject(object):
         self.obj = obj
         self.id = id
         self.as_of_date = as_of_date
+        self._activated_in_fedora = False #tells us if we've changed 'D' state to 'A' in order to make changes
 
         if mimetype is None:
             mimetype = self.default_mimetype
@@ -371,7 +372,12 @@ class DatastreamObject(object):
             if not self.versionable:
                 self._backup()
             # if this datastream already exists, use modifyDatastream API call
-            r = self.obj.api.modifyDatastream(self.obj.pid, self.id,
+            try:
+                r = self.obj.api.modifyDatastream(self.obj.pid, self.id,
+                    logMessage=logmessage, **save_opts)
+            except DatastreamDeleted:
+                self._make_active_in_fedora()
+                r = self.obj.api.modifyDatastream(self.obj.pid, self.id,
                     logMessage=logmessage, **save_opts)
             # expects 200 ok
             success = (r.status_code == requests.codes.ok)
@@ -403,6 +409,14 @@ class DatastreamObject(object):
 
         return success      # msg ?
 
+    def _make_active_in_fedora(self):
+        #some functions fail when a datastream is 'D': getDatastreamDissemination, modifyDatastream
+        #   so we need to change state to 'A' in Fedora before doing those things
+        self.obj.api.modifyDatastream(self.obj.pid, self.id,
+                logMessage='changing state to A for updates', dsState='A')
+        self.state = 'A'
+        self._activated_in_fedora = True
+
     def _backup(self):
         info = self.obj.getDatastreamProfile(self.id)
         self._info_backup = {'dsLabel': info.label,
@@ -412,7 +426,8 @@ class DatastreamObject(object):
                              'formatURI': info.format,
                              'checksumType': info.checksum_type,
                              'checksum': info.checksum}
-
+        if info.state == 'D':
+            self._make_active_in_fedora()
         r = self.obj.api.getDatastreamDissemination(self.obj.pid, self.id)
         self._content_backup = r.content
 
@@ -431,10 +446,16 @@ class DatastreamObject(object):
         if self.versionable:
             # if this is a versioned datastream, get datastream history
             # and purge the most recent version
-            last_save = self.history().versions[0].created  # fedora returns most recent first
+            if self._activated_in_fedora:
+                versions = self.history().versions
+                last_save = versions[1].created  # fedora returns most recent first
+            else:
+                last_save = self.history().versions[0].created  # fedora returns most recent first
             r = self.obj.api.purgeDatastream(self.obj.pid, self.id,
                                                 datetime_to_fedoratime(last_save),
                                                 logMessage=logMessage)
+            if self._activated_in_fedora:
+                r = self.obj.api.modifyDatastream(self.obj.pid, self.id, logMessage='setting state back to "D"', dsState='D')
             return r.status_code == requests.codes.ok
         else:
             # for an unversioned datastream, update with any content and info

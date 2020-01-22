@@ -15,11 +15,7 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-try:
-    from collections import OrderedDict
-except ImportError:
-    # not available in python 2.6
-    OrderedDict = None
+from collections import OrderedDict
 from datetime import datetime, timedelta
 import io
 import logging
@@ -84,15 +80,15 @@ class SimpleDigitalObject(models.DigitalObject):
 TEXT_CONTENT = "Here is some text content for a non-xml datastream."
 
 
-def _add_text_datastream(obj):
+def _add_text_datastream(obj, dsID='TEXT', versionable=False):
     # add a text datastream to the current test object
     FILE = tempfile.NamedTemporaryFile(mode="w", suffix=".txt")
     FILE.write(TEXT_CONTENT)
     FILE.flush()
     # info for calling addDatastream, and return
-    ds = {'id': 'TEXT', 'label': 'text datastream', 'mimeType': 'text/plain',
+    ds = {'id': dsID, 'label': 'text datastream', 'mimeType': 'text/plain',
         'controlGroup': 'M', 'logMessage': "creating new datastream",
-        'versionable': False, 'checksumType': 'MD5'}
+        'versionable': versionable, 'checksumType': 'MD5'}
 
     with open(FILE.name) as tmpfile:
         obj.api.addDatastream(obj.pid, ds['id'], ds['label'],
@@ -106,7 +102,7 @@ class TestDatastreams(FedoraTestCase):
     pidspace = FEDORA_PIDSPACE
 
     def setUp(self):
-        super(TestDatastreams, self).setUp()
+        super().setUp()
         self.pid = self.fedora_fixtures_ingested[-1]  # get the pid for the last object
         self.obj = MyDigitalObject(self.api, self.pid)
 
@@ -139,12 +135,8 @@ class TestDatastreams(FedoraTestCase):
         # there may be micro-second variation between these two
         # ingest/creation times, but they should probably be less than
         # a second or two apart
-        try:
-            self.assertAlmostEqual(self.ingest_time, self.obj.dc.created,
+        self.assertAlmostEqual(self.ingest_time, self.obj.dc.created,
                                    delta=TWO_SECS)
-        except TypeError:
-            # delta keyword unavailable before python 2.7
-            self.assert_(abs(self.ingest_time - self.obj.dc.created) < TWO_SECS)
 
         # short-cut to datastream size
         self.assertEqual(self.obj.dc.info.size, self.obj.dc.size)
@@ -154,12 +146,8 @@ class TestDatastreams(FedoraTestCase):
         self.assertEqual(self.obj.text.state, "A")
         self.assertEqual(self.obj.text.versionable, False)
         self.assertEqual(self.obj.text.control_group, "M")
-        try:
-            self.assertAlmostEqual(self.ingest_time, self.obj.text.created,
+        self.assertAlmostEqual(self.ingest_time, self.obj.text.created,
                                    delta=TWO_SECS)
-        except TypeError:
-            # delta keyword unavailable before python 2.7
-            self.assert_(abs(self.ingest_time - self.obj.text.created) < TWO_SECS)
 
         # bootstrap info from defaults for a new object
         newobj = MyDigitalObject(self.api)
@@ -201,6 +189,38 @@ class TestDatastreams(FedoraTestCase):
         self.assertTrue(saved, "saving DC datastream should return true")
         r = self.obj.api.getDatastreamDissemination(self.pid, self.obj.dc.id)
         self.assert_("<dc:title>this is a new title</dc:title>" in r.text)
+
+    def test_save_datastream_deleted(self):
+        new_content = 'test saving deleted ds'
+        self.obj.text.state = 'D'
+        self.obj.text.save()
+        self.obj.text.content = new_content
+        self.obj.text.save()
+        self.assertEqual(self.obj.text.state, 'A')
+        #get the object from Fedora again, to make sure state is correct there
+        obj = self.repo.get_object(self.obj.pid)
+        text_ds = obj.getDatastreamObject('TEXT')
+        self.assertEqual(text_ds.state, 'A')
+        self.assertEqual(text_ds.content, new_content.encode('utf8'))
+
+    def test_save_datastream_versioned_deleted(self):
+        dsID = 'ASDF'
+        _add_text_datastream(self.obj, dsID=dsID, versionable=True)
+        ds_obj = self.obj.getDatastreamObject(dsID)
+        self.assertTrue(ds_obj.versionable)
+        ds_obj.state = 'D'
+        ds_obj.save()
+        obj = self.repo.get_object(self.obj.pid)
+        ds_obj = obj.getDatastreamObject(dsID)
+        self.assertEqual(ds_obj.state, 'D')
+        new_content = 'new ASDF content'
+        ds_obj.content = new_content
+        ds_obj.save()
+        #re-fetch from Fedora
+        obj = self.repo.get_object(self.obj.pid)
+        ds_obj = obj.getDatastreamObject(dsID)
+        self.assertEqual(ds_obj.content, new_content.encode('utf8'))
+        self.assertEqual(ds_obj.state, 'A')
 
     def test_save_by_location(self):
         file_uri = 'file:///tmp/rsk-test.txt'
@@ -365,6 +385,32 @@ class TestDatastreams(FedoraTestCase):
         self.assertEqual("text datastream", history.versions[0].label)
         r = self.obj.api.getDatastreamDissemination(self.pid, self.obj.text.id)
         self.assertEqual(TEXT_CONTENT, r.text)
+
+    def test_undo_last_save_versioned_deleted_datastream(self):
+        dsID = 'ASDF'
+        _add_text_datastream(self.obj, dsID, versionable=True)
+        obj = self.repo.get_object(self.obj.pid)
+        ds_obj = obj.getDatastreamObject(dsID)
+        self.assertTrue(ds_obj.versionable)
+        ds_obj.state = 'D'
+        ds_obj.save()
+        obj = self.repo.get_object(self.obj.pid)
+        ds_obj = obj.getDatastreamObject(dsID)
+        self.assertEqual(ds_obj.state, 'D')
+        version_timestamps = [str(v.created) for v in ds_obj.history().versions]
+        self.assertEqual(len(version_timestamps), 2)
+        ds_obj.content = 'new change that we want to roll back'
+        ds_obj.save()
+        ds_obj.undo_last_save()
+        obj = self.repo.get_object(self.obj.pid)
+        ds_obj = obj.getDatastreamObject(dsID)
+        new_version_timestamps = [str(v.created) for v in ds_obj.history().versions]
+        #need to make sure state was set back to 'D', the way it started
+        self.assertEqual(ds_obj.state, 'D')
+        #make sure the old versions (from before we made any changes) are still there
+        #   (the extra version we have now is for manually setting the state back to 'D' - that
+        #   doesn't seem to happen automatically when we purge the datastream versions)
+        self.assertEqual(version_timestamps, new_version_timestamps[1:])
 
     def test_get_chunked_content(self):
         # get chunks - chunksize larger than entire text content
@@ -837,12 +883,10 @@ class TestDigitalObject(FedoraTestCase):
         # datastream save order is determined by dscache, which is a dict
         # so order is not reliable; convert to ordered dict to enforce
         # the save order expected by the tests below
-        if OrderedDict is not None:
-            # ordered dict not available in py2.6; do without if not available
-            self.obj.dscache = OrderedDict([
-                ('TEXT', self.obj.dscache['TEXT']),
-                ('DC', self.obj.dscache['DC'])
-            ])
+        self.obj.dscache = OrderedDict([
+            ('TEXT', self.obj.dscache['TEXT']),
+            ('DC', self.obj.dscache['DC'])
+        ])
 
         # catch the exception so we can inspect it
         try:
