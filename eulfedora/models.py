@@ -377,6 +377,7 @@ class DatastreamObject(object):
                     logMessage=logmessage, **save_opts)
             except DatastreamDeleted:
                 self._make_active_in_fedora()
+                save_opts.pop('dsState', None) #so we don't set the state right back to 'D'
                 r = self.obj.api.modifyDatastream(self.obj.pid, self.id,
                     logMessage=logmessage, **save_opts)
             # expects 200 ok

@@ -222,6 +222,26 @@ class TestDatastreams(FedoraTestCase):
         self.assertEqual(ds_obj.content, new_content.encode('utf8'))
         self.assertEqual(ds_obj.state, 'A')
 
+    def test_save_datastream_versioned_deleted_info_modified(self):
+        dsID = 'ASDF'
+        _add_text_datastream(self.obj, dsID=dsID, versionable=True)
+        ds_obj = self.obj.getDatastreamObject(dsID)
+        self.assertTrue(ds_obj.versionable)
+        ds_obj.state = 'D'
+        ds_obj.save()
+        obj = self.repo.get_object(self.obj.pid)
+        ds_obj = obj.getDatastreamObject(dsID)
+        self.assertEqual(ds_obj.state, 'D')
+        new_content = 'new ASDF content'
+        ds_obj.label = 'some new label'
+        ds_obj.content = new_content
+        ds_obj.save()
+        #re-fetch from Fedora
+        obj = self.repo.get_object(self.obj.pid)
+        ds_obj = obj.getDatastreamObject(dsID)
+        self.assertEqual(ds_obj.state, 'A')
+        self.assertEqual(ds_obj.content, new_content.encode('utf8'))
+
     def test_save_by_location(self):
         file_uri = 'file:///tmp/rsk-test.txt'
 
