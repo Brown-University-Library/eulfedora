@@ -73,7 +73,7 @@ class RequestFailed(IOError):
         #  response = HttpResponse with the error information
         #  content = optional content of the response body, if it needed to be read
         #            to determine what kind of exception to raise
-        super(RequestFailed, self).__init__('%d %s' % (response.status_code, response.text))
+        super().__init__('%d %s' % (response.status_code, response.text))
         self.code = response.status_code
         self.reason = response.text
         if response.status_code == requests.codes.server_error:
@@ -83,7 +83,7 @@ class RequestFailed(IOError):
             content = force_text(content)
             # when Fedora gives a 500 error, it includes a stack-trace - pulling first line as detail
             # NOTE: this is likely to break if and when Fedora error responses change
-            if 'content-type' in response.headers and response.headers['content-type'] == 'text/plain':
+            if 'content-type' in response.headers and response.headers['content-type'].startswith('text/plain'):
                 # for plain text, first line of stack-trace is first line of text
                 self.detail = content.split('\n')[0]
             else:

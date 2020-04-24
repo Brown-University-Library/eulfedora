@@ -1,42 +1,10 @@
 eulfedora
 ^^^^^^^^^
 
-**package**
-  .. image:: https://img.shields.io/pypi/v/eulfedora.svg
-    :target: https://pypi.python.org/pypi/eulfedora
-    :alt: PyPI
-
-  .. image:: https://img.shields.io/pypi/l/eulfedora.svg
-    :alt: License
-
-  .. image:: https://img.shields.io/pypi/dm/eulfedora.svg
-    :alt: PyPI downloads
-
-**documentation**
-  .. image:: https://readthedocs.org/projects/eulfedora/badge/?version=master
-    :target: http://eulfedora.readthedocs.org/en/develop/?badge=master
-    :alt: Documentation Status
-
 **code**
-  .. image:: https://travis-ci.org/emory-libraries/eulfedora.svg?branch=master
-    :target: https://travis-ci.org/emory-libraries/eulfedora
+  .. image:: https://travis-ci.org/Brown-University-Library/eulfedora.svg?branch=master
+    :target: https://travis-ci.org/Brown-University-Library/eulfedora
     :alt: travis-ci build
-
-  .. image:: https://coveralls.io/repos/github/emory-libraries/eulfedora/badge.svg?branch=master
-    :target: https://coveralls.io/github/emory-libraries/eulfedora?branch=master
-    :alt: Code Coverage
-
-  .. image:: https://landscape.io/github/emory-libraries/eulfedora/master/landscape.svg?style=flat
-     :target: https://landscape.io/github/emory-libraries/eulfedora/master
-     :alt: Code Health
-
-  .. image:: https://codeclimate.com/github/emory-libraries/eulfedora/badges/gpa.svg
-    :target: https://codeclimate.com/github/emory-libraries/eulfedora
-    :alt: Code Climate
-
-  .. image:: https://requires.io/github/emory-libraries/eulfedora/requirements.svg?branch=develop
-    :target: https://requires.io/github/emory-libraries/eulfedora/requirements/?branch=develop
-    :alt: Requirements Status
 
 
 eulfedora is a `Python <http://www.python.org/>`_ module that provides
