@@ -1152,6 +1152,78 @@ def build_foxml_managed_content(E, dsobj, api):
     return content_location
 
 
+def build_foxml_datastream(E, dsid, dsobj, pid, api):
+
+    # if we can't construct a content node then bail before constructing
+    # any other nodes
+    content_node = None
+
+    if dsobj.control_group == 'X':
+        content_node = build_foxml_inline_content(E, dsobj)
+    elif dsobj.control_group == 'M':
+        content_node = build_foxml_managed_content(E, dsobj, api=api)
+    if content_node is None:
+        return
+
+    ds_xml = E('datastream')
+    ds_xml.set('ID', dsid)
+    ds_xml.set('CONTROL_GROUP', dsobj.control_group)
+    ds_xml.set('STATE', dsobj.state)
+    ds_xml.set('VERSIONABLE', force_text(dsobj.versionable).lower())
+
+    ver_xml = E('datastreamVersion')
+    ver_xml.set('ID', dsid + '.0')
+    ver_xml.set('MIMETYPE', dsobj.mimetype)
+    if dsobj.format:
+        ver_xml.set('FORMAT_URI', dsobj.format)
+    if dsobj.label:
+        ver_xml.set('LABEL', dsobj.label)
+
+    # I BOTH checksum and checksum type are specified, set contentDigest.
+    # NOTE: this is a change from eulfedora 1.1 and previous, where
+    # a checksum type could be passed and Fedora would automatically calculate
+    # a checksum value of the requested type; that does *not* work in
+    # Fedora 3.8, so instead we rely on the auto-checksumming functionality.
+    # (But also note that auto-checksumming on ingest was broken in Fedora
+    # until Fedora 3.7 - https://jira.duraspace.org/browse/FCREPO-1047)
+    if dsobj.checksum and dsobj.checksum_type:
+        digest_xml = E('contentDigest')
+        if dsobj.checksum_type:
+            digest_xml.set('TYPE', dsobj.checksum_type)
+        else:
+            # default to MD5 checksum if not specified
+            digest_xml.set('TYPE', "MD5")
+        if dsobj.checksum:
+            digest_xml.set('DIGEST', dsobj.checksum)
+        ver_xml.append(digest_xml)
+    elif hasattr(dsobj._raw_content(), 'read'):
+        # Content exists, but no checksum, so log a warning.
+        # FIXME: probably need a better way to check this.
+        logging.warning("Datastream ingested without a passed checksum or checksum type: %s/%s.",
+                        pid, dsid)
+
+    ds_xml.append(ver_xml)
+
+    ver_xml.append(content_node)
+    return ds_xml
+
+
+def build_foxml_doc(pid, api, state, label, owner, datastreams):
+    # make an lxml element builder - default namespace is foxml, display with foxml prefix
+    E = ElementMaker(namespace=FOXML_NS, nsmap={'foxml': FOXML_NS})
+    doc = E('digitalObject')
+    doc.set('VERSION', '1.1')
+    doc.set('PID', pid)
+    doc.append(build_foxml_properties(E, state=state, label=label, owner=owner))
+
+    for dsname, dsobj in datastreams.items():
+        dsnode = build_foxml_datastream(E, dsname, dsobj, pid=pid, api=api)
+        if dsnode is not None:
+            doc.append(dsnode)
+
+    return doc
+
+
 class DigitalObject(six.with_metaclass(DigitalObjectType, object)):
     """
     A single digital object in a Fedora respository, with methods and
@@ -1707,93 +1779,16 @@ class DigitalObject(six.with_metaclass(DigitalObjectType, object)):
         self.relcache = {}    # cache for related objects that have been retrieved
 
     def _build_foxml_for_ingest(self, pretty=False):
-        doc = self._build_foxml_doc()
+        # collect datastream definitions for ingest.
+        datastreams = self._defined_datastreams.copy()
+        datastreams.update(self._adhoc_datastreams)
+        doc = build_foxml_doc(pid=self.pid, api=self.api, state=self.state, label=self.label, owner=self.owner, datastreams=datastreams)
 
         print_opts = {'encoding': 'UTF-8'}
         if pretty:  # for easier debug
             print_opts['pretty_print'] = True
 
         return etree.tostring(doc, **print_opts)
-
-
-    def _build_foxml_doc(self):
-        # make an lxml element builder - default namespace is foxml, display with foxml prefix
-        E = ElementMaker(namespace=FOXML_NS, nsmap={'foxml': FOXML_NS})
-        doc = E('digitalObject')
-        doc.set('VERSION', '1.1')
-        doc.set('PID', self.pid)
-        doc.append(build_foxml_properties(E, state=self.state, label=self.label, owner=self.owner))
-
-        # collect datastream definitions for ingest.
-        for dsname, ds in self._defined_datastreams.items():
-            dsobj = getattr(self, dsname)
-            dsnode = self._build_foxml_datastream(E, ds.id, dsobj)
-            if dsnode is not None:
-                doc.append(dsnode)
-
-        # also collect ad-hoc datastream definitions for ingest.
-        for dsname, ds in self._adhoc_datastreams.items():
-            dsobj = getattr(self, dsname)
-            dsnode = self._build_foxml_datastream(E, ds.id, dsobj)
-            if dsnode is not None:
-                doc.append(dsnode)
-
-        return doc
-
-    def _build_foxml_datastream(self, E, dsid, dsobj):
-
-        # if we can't construct a content node then bail before constructing
-        # any other nodes
-        content_node = None
-
-        if dsobj.control_group == 'X':
-            content_node = build_foxml_inline_content(E, dsobj)
-        elif dsobj.control_group == 'M':
-            content_node = build_foxml_managed_content(E, dsobj, api=self.api)
-        if content_node is None:
-            return
-
-        ds_xml = E('datastream')
-        ds_xml.set('ID', dsid)
-        ds_xml.set('CONTROL_GROUP', dsobj.control_group)
-        ds_xml.set('STATE', dsobj.state)
-        ds_xml.set('VERSIONABLE', force_text(dsobj.versionable).lower())
-
-        ver_xml = E('datastreamVersion')
-        ver_xml.set('ID', dsid + '.0')
-        ver_xml.set('MIMETYPE', dsobj.mimetype)
-        if dsobj.format:
-            ver_xml.set('FORMAT_URI', dsobj.format)
-        if dsobj.label:
-            ver_xml.set('LABEL', dsobj.label)
-
-        # I BOTH checksum and checksum type are specified, set contentDigest.
-        # NOTE: this is a change from eulfedora 1.1 and previous, where
-        # a checksum type could be passed and Fedora would automatically calculate
-        # a checksum value of the requested type; that does *not* work in
-        # Fedora 3.8, so instead we rely on the auto-checksumming functionality.
-        # (But also note that auto-checksumming on ingest was broken in Fedora
-        # until Fedora 3.7 - https://jira.duraspace.org/browse/FCREPO-1047)
-        if dsobj.checksum and dsobj.checksum_type:
-            digest_xml = E('contentDigest')
-            if dsobj.checksum_type:
-                digest_xml.set('TYPE', dsobj.checksum_type)
-            else:
-                # default to MD5 checksum if not specified
-                digest_xml.set('TYPE', "MD5")
-            if dsobj.checksum:
-                digest_xml.set('DIGEST', dsobj.checksum)
-            ver_xml.append(digest_xml)
-        elif hasattr(dsobj._raw_content(), 'read'):
-            # Content exists, but no checksum, so log a warning.
-            # FIXME: probably need a better way to check this.
-            logging.warning("Datastream ingested without a passed checksum or checksum type: %s/%s.",
-                            self.pid, dsid)
-
-        ds_xml.append(ver_xml)
-
-        ver_xml.append(content_node)
-        return ds_xml
 
     def _get_datastreams(self):
         """
