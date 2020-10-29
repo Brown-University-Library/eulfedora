@@ -1119,6 +1119,39 @@ def build_foxml_properties(E, state=None, label=None, owner=None):
     return props
 
 
+def build_foxml_inline_content(E, dsobj):
+    orig_content_node = dsobj._content_as_node()
+    if orig_content_node is None:
+        return
+
+    content_container_xml = E('xmlContent')
+    content_container_xml.append(orig_content_node)
+    return content_container_xml
+
+
+def build_foxml_managed_content(E, dsobj, api):
+    content_uri = None
+    if dsobj.ds_location:
+        # if datastream has a location set, use that first
+        content_uri = dsobj.ds_location
+        uri_type = 'URL'
+    else:
+        # otherwise, check for local content and upload it
+        content_s = dsobj._raw_content()
+        if content_s is not None:
+            content_uri = api.upload(content_s)
+            uri_type = 'INTERNAL_ID'
+
+    # stop if no content was found in either location
+    if content_uri is None:
+        return
+
+    content_location = E('contentLocation')
+    content_location.set('REF', content_uri)
+    content_location.set('TYPE', uri_type)
+    return content_location
+
+
 class DigitalObject(six.with_metaclass(DigitalObjectType, object)):
     """
     A single digital object in a Fedora respository, with methods and
@@ -1714,9 +1747,9 @@ class DigitalObject(six.with_metaclass(DigitalObjectType, object)):
         content_node = None
 
         if dsobj.control_group == 'X':
-            content_node = self._build_foxml_inline_content(E, dsobj)
+            content_node = build_foxml_inline_content(E, dsobj)
         elif dsobj.control_group == 'M':
-            content_node = self._build_foxml_managed_content(E, dsobj)
+            content_node = build_foxml_managed_content(E, dsobj, api=self.api)
         if content_node is None:
             return
 
@@ -1761,37 +1794,6 @@ class DigitalObject(six.with_metaclass(DigitalObjectType, object)):
 
         ver_xml.append(content_node)
         return ds_xml
-
-    def _build_foxml_inline_content(self, E, dsobj):
-        orig_content_node = dsobj._content_as_node()
-        if orig_content_node is None:
-            return
-
-        content_container_xml = E('xmlContent')
-        content_container_xml.append(orig_content_node)
-        return content_container_xml
-
-    def _build_foxml_managed_content(self, E, dsobj):
-        content_uri = None
-        if dsobj.ds_location:
-            # if datastream has a location set, use that first
-            content_uri = dsobj.ds_location
-            uri_type = 'URL'
-        else:
-            # otherwise, check for local content and upload it
-            content_s = dsobj._raw_content()
-            if content_s is not None:
-                content_uri = self.api.upload(content_s)
-                uri_type = 'INTERNAL_ID'
-
-        # stop if no content was found in either location
-        if content_uri is None:
-            return
-
-        content_location = E('contentLocation')
-        content_location.set('REF', content_uri)
-        content_location.set('TYPE', uri_type)
-        return content_location
 
     def _get_datastreams(self):
         """
