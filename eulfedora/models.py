@@ -37,6 +37,8 @@ from eulxml.xmlmap.dc import DublinCore
 
 logger = logging.getLogger(__name__)
 
+FOXML_NS = 'info:fedora/fedora-system:def/foxml#'
+
 
 class DatastreamObject(object):
     """Object to ease accessing and updating a datastream belonging to a Fedora
@@ -1095,6 +1097,28 @@ class DigitalObjectType(type):
         return DigitalObjectType._registry.copy()
 
 
+def build_foxml_properties(E, state=None, label=None, owner=None):
+    props = E('objectProperties')
+    state = E('property')
+    state.set('NAME', 'info:fedora/fedora-system:def/model#state')
+    state.set('VALUE', state or 'A')
+    props.append(state)
+
+    if label:
+        label = E('property')
+        label.set('NAME', 'info:fedora/fedora-system:def/model#label')
+        label.set('VALUE', label)
+        props.append(label)
+
+    if owner:
+        owner = E('property')
+        owner.set('NAME', 'info:fedora/fedora-system:def/model#ownerId')
+        owner.set('VALUE', owner)
+        props.append(owner)
+
+    return props
+
+
 class DigitalObject(six.with_metaclass(DigitalObjectType, object)):
     """
     A single digital object in a Fedora respository, with methods and
@@ -1658,15 +1682,14 @@ class DigitalObject(six.with_metaclass(DigitalObjectType, object)):
 
         return etree.tostring(doc, **print_opts)
 
-    FOXML_NS = 'info:fedora/fedora-system:def/foxml#'
 
     def _build_foxml_doc(self):
         # make an lxml element builder - default namespace is foxml, display with foxml prefix
-        E = ElementMaker(namespace=self.FOXML_NS, nsmap={'foxml': self.FOXML_NS})
+        E = ElementMaker(namespace=FOXML_NS, nsmap={'foxml': FOXML_NS})
         doc = E('digitalObject')
         doc.set('VERSION', '1.1')
         doc.set('PID', self.pid)
-        doc.append(self._build_foxml_properties(E))
+        doc.append(build_foxml_properties(E, state=self.state, label=self.label, owner=self.owner))
 
         # collect datastream definitions for ingest.
         for dsname, ds in self._defined_datastreams.items():
@@ -1683,27 +1706,6 @@ class DigitalObject(six.with_metaclass(DigitalObjectType, object)):
                 doc.append(dsnode)
 
         return doc
-
-    def _build_foxml_properties(self, E):
-        props = E('objectProperties')
-        state = E('property')
-        state.set('NAME', 'info:fedora/fedora-system:def/model#state')
-        state.set('VALUE', self.state or 'A')
-        props.append(state)
-
-        if self.label:
-            label = E('property')
-            label.set('NAME', 'info:fedora/fedora-system:def/model#label')
-            label.set('VALUE', self.label)
-            props.append(label)
-
-        if self.owner:
-            owner = E('property')
-            owner.set('NAME', 'info:fedora/fedora-system:def/model#ownerId')
-            owner.set('VALUE', self.owner)
-            props.append(owner)
-
-        return props
 
     def _build_foxml_datastream(self, E, dsid, dsobj):
 
