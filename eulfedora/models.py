@@ -1780,8 +1780,13 @@ class DigitalObject(six.with_metaclass(DigitalObjectType, object)):
 
     def _build_foxml_for_ingest(self, pretty=False):
         # collect datastream definitions for ingest.
-        datastreams = self._defined_datastreams.copy()
-        datastreams.update(self._adhoc_datastreams)
+        datastreams = {]
+        for dsname, ds in self._defined_datastreams.items():
+            dsobj = getattr(self, dsname)
+            datastreams[dsname] = dsobj
+        for dsname, ds in self._adhoc_datastreams.items():
+            dsobj = getattr(self, dsname)
+            datastreams[dsname] = dsobj
         doc = build_foxml_doc(pid=self.pid, api=self.api, state=self.state, label=self.label, owner=self.owner, datastreams=datastreams)
 
         print_opts = {'encoding': 'UTF-8'}
